@@ -1,0 +1,27 @@
+# CI for the PHP SDK. Actions are pinned to full commit hashes (the tag is in the comment); Dependabot proposes updates.
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php: ['8.5']            # add the next PHP release here when it ships
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { persist-credentials: false }
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: curl, json
+          coverage: none
+      - run: composer validate --strict
+      - run: php -l src/Client.php && find src tests bin -name '*.php' -print0 | xargs -0 -n1 php -l > /dev/null
+      # The shared contract (webhook signatures, retries, pagination), fetched read-only.
+      - run: git clone --depth 1 https://github.com/qmgateway-sms/qmgateway-contract.git tests/contract   # the sdk-contract/ folder
+      - run: php tests/run.php

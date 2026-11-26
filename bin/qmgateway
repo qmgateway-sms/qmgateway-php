@@ -1,0 +1,79 @@
+#!/usr/bin/env php
+<?php
+declare(strict_types=1);
+
+/**
+ * Command-line tool.   QMGATEWAY_API_KEY=qm_live_... php bin/qmgateway account
+ * The key is read from the environment on purpose: a key typed as an argument stays in your shell history.
+ */
+
+use QMGateway\{Client, Options, Webhook};
+use QMGateway\Exception\{QMGatewayException, SignatureException};
+
+foreach ([__DIR__ . '/../src/autoload.php', __DIR__ . '/../../../autoload.php', __DIR__ . '/../vendor/autoload.php'] as $f) { if (is_file($f)) { require $f; break; } }
+
+$args = array_slice($argv, 1);
+$cmd = array_shift($args) ?? 'help';
+$json = in_array('--json', $args, true); $args = array_values(array_diff($args, ['--json']));
+
+function out(mixed $v, bool $json): void
+{
+    if ($json) { echo json_encode($v, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PARTIAL_OUTPUT_ON_ERROR), "\n"; return; }
+    if (is_string($v)) { echo $v, "\n"; return; }
+    foreach ($v as $k => $x) echo str_pad((string)$k, 18), is_scalar($x) || $x === null ? (string)var_export($x, true) : json_encode($x, JSON_UNESCAPED_SLASHES), "\n";
+}
+function fail(string $m, int $code = 1): never { fwrite(STDERR, $m . "\n"); exit($code); }
+
+if ($cmd === 'help' || $cmd === '--help' || $cmd === '-h') {
+    echo <<<TXT
+    qmgateway command-line tool
+
+    Set QMGATEWAY_API_KEY (and QMGATEWAY_BASE_URL for a non-default server), then:
+      account                       who the key belongs to and which services are ready
+      balance                       what is left of your plan
+      devices                       your gateway phones
+      send <phone> <message>        queue a message (add --at "2026-12-01 08:00:00" to schedule it)
+      status <id>                   where a message is now
+      messages [--status=Failed]    the latest messages
+      verify-webhook --secret=...   check a webhook: pass the raw body on standard input and --header="Name: value" for each header
+    Add --json for machine-readable output.
+
+    TXT;
+    exit(0);
+}
+
+if ($cmd === 'verify-webhook') {
+    $secret = null; $headers = [];
+    foreach ($args as $a) {
+        if (str_starts_with($a, '--secret=')) $secret = substr($a, 9);
+        elseif (str_starts_with($a, '--header=') && str_contains($a, ':')) { [$n, $v] = explode(':', substr($a, 9), 2); $headers[trim($n)] = trim($v); }
+    }
+    $secret ??= getenv('QMGATEWAY_WEBHOOK_SECRET') ?: null;
+    if ($secret === null) fail('Give --secret=... or set QMGATEWAY_WEBHOOK_SECRET.', 2);
+    try { $e = Webhook::verify((string)stream_get_contents(STDIN), $headers, $secret); out(['verified' => true, 'event' => $e->type, 'event_id' => $e->id, 'message_id' => $e->messageId()], $json); exit(0); }
+    catch (SignatureException $e) { out(['verified' => false, 'reason' => $e->reason], $json); exit(3); }
+}
+
+$key = getenv('QMGATEWAY_API_KEY') ?: fail('Set the QMGATEWAY_API_KEY environment variable.', 2);
+$base = getenv('QMGATEWAY_BASE_URL') ?: Options::DEFAULT_BASE_URL;
+try {
+    $qm = Client::create($key, new Options(baseUrl: $base));
+    switch ($cmd) {
+        case 'account': $a = $qm->account->get(); out($json ? $a->raw : ['organisation' => $a->organisationName, 'key' => $a->keyMode, 'sms_ready' => $a->service('sms')?->readyToSend() ?? false], $json); break;
+        case 'balance': $b = $qm->account->balance(); out($json ? $b->raw : ['plan' => $b->plan, 'remaining' => "{$b->remaining} of {$b->quota}", 'level' => $b->level, 'expires_at' => $b->expiresAt], $json); break;
+        case 'devices': foreach ($qm->devices->list() as $d) out($json ? $d->raw : "#{$d->id} {$d->name} ({$d->status}, {$d->queued} queued)", $json); break;
+        case 'send':
+            $at = null; $rest = [];
+            for ($i = 0; $i < count($args); $i++) { if ($args[$i] === '--at') $at = $args[++$i] ?? null; else $rest[] = $args[$i]; }
+            if (count($rest) < 2) fail('Usage: qmgateway send <phone> <message> [--at "YYYY-MM-DD HH:MM:SS"]', 2);
+            $r = $qm->messages->send($rest[0], implode(' ', array_slice($rest, 1)), scheduledAt: $at);
+            out($json ? $r->raw : "Queued message {$r->messageId()} ({$r->remainingUnits} units left)", $json); break;
+        case 'status': $m = $qm->messages->get((int)($args[0] ?? 0)); out($json ? $m->raw : "#{$m->id} {$m->phoneNumber}: {$m->status}" . ($m->failureReason ? " ({$m->failureReason})" : ''), $json); break;
+        case 'messages':
+            $status = null; foreach ($args as $a) if (str_starts_with($a, '--status=')) $status = substr($a, 9);
+            foreach ($qm->messages->list(status: $status, limit: 20) as $m) out($json ? $m->raw : "#{$m->id} {$m->phoneNumber} {$m->status}", $json); break;
+        default: fail("Unknown command \"$cmd\". Run qmgateway help.", 2);
+    }
+} catch (QMGatewayException $e) {
+    fail('Error: ' . $e->getMessage() . ($e instanceof QMGateway\Exception\ApiException ? " [{$e->errorCode}]" : ''));
+}

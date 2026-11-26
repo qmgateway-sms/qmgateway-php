@@ -1,0 +1,45 @@
+{
+    "name": "qmgateway/qmgateway-php",
+    "description": "The official PHP SDK for the QMGateway API: send SMS and one-time passwords, follow delivery, read replies, and verify webhooks. No dependencies.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": [
+        "sms",
+        "qmgateway",
+        "otp",
+        "webhook",
+        "malawi"
+    ],
+    "homepage": "https://github.com/qmgateway-sms/qmgateway-php",
+    "require": {
+        "php": ">=8.5",
+        "ext-curl": "*",
+        "ext-json": "*"
+    },
+    "autoload": {
+        "psr-4": {
+            "QMGateway\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "QMGateway\\Tests\\": "tests/"
+        }
+    },
+    "bin": [
+        "bin/qmgateway"
+    ],
+    "scripts": {
+        "test": "php tests/run.php"
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {}
+    },
+    "minimum-stability": "stable",
+    "support": {
+        "issues": "https://github.com/qmgateway-sms/qmgateway-php/issues",
+        "source": "https://github.com/qmgateway-sms/qmgateway-php",
+        "security": "https://github.com/qmgateway-sms/qmgateway-php/security/policy"
+    }
+}
