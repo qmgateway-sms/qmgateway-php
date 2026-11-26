@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 (unreleased)
+## 0.1.0 (2026-11-26)
 - First version: messages (send, send to many, status, list, scheduled, cancel, reschedule), inbox, devices, one-time passwords, account, balance and statistics.
 - Typed results and typed errors (`AuthenticationException`, `PermissionException`, `InvalidRequestException`, `NotFoundException`, `RateLimitException`, `ServerException`, `ConnectionException`).
 - Safe retries with the same `Idempotency-Key`, `Retry-After` support, 30 second timeout.
